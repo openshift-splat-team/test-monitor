@@ -1,9 +1,11 @@
 package context
 
 import (
+	"fmt"
 	"path"
 	"sync"
 
+	"github.com/go-logr/logr"
 	"github.com/openshift-splat-team/test-monitor/pkg/data"
 	v1 "github.com/openshift-splat-team/vsphere-capacity-manager/pkg/apis/vspherecapacitymanager.splat.io/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -15,11 +17,13 @@ type TestContextService struct {
 	testContexts   map[string]*data.TestContext
 	metricsContext *MetricsContext
 	mutex          *sync.Mutex
+	log 			logr.Logger
 }
 
-func (t *TestContextService) Initialize() {
+func (t *TestContextService) Initialize(log logr.Logger) {
 	t.testContexts = make(map[string]*data.TestContext)
 	t.mutex = &sync.Mutex{}
+	t.log = log
 	t.metricsContext = &MetricsContext{}
 	t.metricsContext.Initialize()
 }
@@ -95,7 +99,7 @@ func (t *TestContextService) IsContextFailed(namespace corev1.Namespace) bool {
 	return t.getTestContext(namespace).Failed
 }
 
-func (t *TestContextService) GetPromLabelValues(testContext *data.TestContext) []string {
+func (t *TestContextService) GetPromLabelValues(testContext *data.TestContext) ([]string, error) {
 	var promLabels []string
 	var labelNames = []string{
 		"ci.openshift.io/metadata.target",
@@ -113,25 +117,36 @@ func (t *TestContextService) GetPromLabelValues(testContext *data.TestContext) [
 		}
 	}
 
-	networkType, pool, portGroup := "undefined", "undefined", "undefined"
-	if len(testContext.NetworkType) != 0 {
+	networkType, pool, portGroup := "multi-tenant", "undefined", "undefined"
+	if len(testContext.NetworkType) > 0 {
 		networkType = testContext.NetworkType
+	}	
+
+	if len(testContext.Pool) == 0 {
+		return nil, fmt.Errorf("pool is empty")		
 	}
-	if len(testContext.Pool) != 0 {
-		pool = testContext.Pool
+	pool = testContext.Pool
+	if len(testContext.Portgroup) == 0 {
+		return nil, fmt.Errorf("port group is empty")		
 	}
-	if len(testContext.Portgroup) != 0 {
-		portGroup = testContext.Portgroup
-	}
-	return append(promLabels, pool, networkType, portGroup)
+	portGroup = testContext.Portgroup
+	return append(promLabels, pool, networkType, portGroup), nil
 }
 
 func (t *TestContextService) Pass(testContext *data.TestContext) {
-	promLabels := t.GetPromLabelValues(testContext)
+	promLabels, err := t.GetPromLabelValues(testContext)
+	if err != nil {
+		t.log.Error(err, "error getting prom labels")	
+		return
+	}
 	t.metricsContext.Pass(promLabels)
 }
 
 func (t *TestContextService) Fail(testContext *data.TestContext) {
-	promLabels := t.GetPromLabelValues(testContext)
+	promLabels, err := t.GetPromLabelValues(testContext)
+	if err != nil {
+		t.log.Error(err, "error getting prom labels")
+		return
+	}
 	t.metricsContext.Fail(promLabels)
 }
