@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/go-logr/logr"
 	testcontext "github.com/openshift-splat-team/test-monitor/pkg/context"
 	v1 "github.com/openshift-splat-team/vsphere-capacity-manager/pkg/apis/vspherecapacitymanager.splat.io/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -38,6 +39,9 @@ type LeaseReconciler struct {
 
 	testContext *testcontext.TestContextService
 	mutex       *sync.Mutex
+
+	inited 		bool
+	log 			logr.Logger
 }
 
 func (l *LeaseReconciler) SetupWithManager(mgr ctrl.Manager,
@@ -57,6 +61,59 @@ func (l *LeaseReconciler) SetupWithManager(mgr ctrl.Manager,
 	l.Scheme = mgr.GetScheme()
 	l.Recorder = mgr.GetEventRecorderFor("leases-controller")
 	l.RESTMapper = mgr.GetRESTMapper()
+	l.log = mgr.GetLogger()
+
+	return nil
+}
+
+func (l *LeaseReconciler) Initialize() error {
+	if l.inited {
+		return nil
+	}
+	l.inited = true
+
+	leaseList := &v1.LeaseList{}
+	err := l.Client.List(l.ctx, leaseList, &client.ListOptions{Namespace: "vsphere-infra-helpers"})
+	if err != nil {
+		return fmt.Errorf("error listing leases: %w", err)
+	}
+
+	for _, lease := range leaseList.Items {
+		err = l.handleLease(lease)
+		if err != nil {
+			return fmt.Errorf("error handling lease: %w", err)
+		}
+	}
+	return nil
+}
+
+func (l *LeaseReconciler) handleLease(lease v1.Lease) error {
+	l.log.Info("handling lease","lease", lease.Name)
+
+	if lease.DeletionTimestamp != nil {
+		l.log.Info("lease is being deleted", "lease", lease.Name)
+		return nil
+	}
+
+	if lease.Labels == nil {
+		l.log.Info("lease has no labels", "lease", lease.Name)
+		return nil
+	}
+	labels := lease.Labels
+	var namespace string
+	var exists bool
+
+	if namespace, exists = labels["vsphere-capacity-manager.splat-team.io/lease-namespace"]; !exists {
+		l.log.Info("lease lacks namespace label", "lease", lease.Name)
+		return nil
+	}
+
+	l.testContext.UpdateWithLease(corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: namespace,
+		},
+	}, lease)
+
 	return nil
 }
 
@@ -65,32 +122,20 @@ func (l *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	var lease v1.Lease
 	err = l.Client.Get(l.ctx, req.NamespacedName, &lease)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("error getting namespace: %w", err)
-	}
-
-	l.mutex.Lock()
-	defer l.mutex.Unlock()
-
-	if lease.DeletionTimestamp != nil {
+		l.log.Error(err, "error getting lease")		
 		return ctrl.Result{}, nil
 	}
 
-	if lease.Labels == nil {
-		return ctrl.Result{}, nil
-	}
-	labels := lease.Labels
-	var namespace string
-	var exists bool
-
-	if namespace, exists = labels["vsphere-capacity-manager.splat-team.io/lease-namespace"]; !exists {
+	err = l.Initialize()
+	if err != nil {
+		l.log.Error(err, "error initializing")		
 		return ctrl.Result{}, nil
 	}
 
-	l.testContext.UpdateWithLease(corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: namespace,
-		},
-	}, lease)
+	err = l.handleLease(lease)
+	if err != nil {
+		l.log.Error(err, "error handling lease")
+		return ctrl.Result{}, nil	}
 
 	return ctrl.Result{}, nil
 }

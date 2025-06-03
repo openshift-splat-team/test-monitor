@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/go-logr/logr"
 	testcontext "github.com/openshift-splat-team/test-monitor/pkg/context"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -39,6 +40,8 @@ type PodReconciler struct {
 	testContext *testcontext.TestContextService
 
 	mutex *sync.Mutex
+
+	log logr.Logger
 }
 
 func (l *PodReconciler) SetupWithManager(mgr ctrl.Manager,
@@ -59,6 +62,8 @@ func (l *PodReconciler) SetupWithManager(mgr ctrl.Manager,
 	l.Scheme = mgr.GetScheme()
 	l.Recorder = mgr.GetEventRecorderFor("pods-controller")
 	l.RESTMapper = mgr.GetRESTMapper()
+	l.log = mgr.GetLogger()
+
 	return nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/go-logr/logr"
 	testcontext "github.com/openshift-splat-team/test-monitor/pkg/context"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -43,6 +44,8 @@ type NamespaceReconciler struct {
 	mutex sync.Mutex
 
 	testContextService *testcontext.TestContextService
+
+	log 			logr.Logger
 }
 
 func (l *NamespaceReconciler) SetupWithManager(mgr ctrl.Manager,
@@ -64,6 +67,8 @@ func (l *NamespaceReconciler) SetupWithManager(mgr ctrl.Manager,
 	l.Scheme = mgr.GetScheme()
 	l.Recorder = mgr.GetEventRecorderFor("namespaces-controller")
 	l.RESTMapper = mgr.GetRESTMapper()
+	l.log = mgr.GetLogger()
+
 	return nil
 }
 
@@ -81,9 +86,13 @@ func (l *NamespaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if namespace.DeletionTimestamp != nil {
 
 		testContext := l.testContextService.DestroyContext(namespace)
-		promLabels := l.testContextService.GetPromLabelValues(testContext)
-
-		fmt.Printf("namespace: %s passed: %v. prom labels: %v", namespace.Namespace, testContext.Failed, promLabels)
+		promLabels, err := l.testContextService.GetPromLabelValues(testContext)
+		if err != nil {
+			l.log.Error(err, "error getting prom labels")			
+			return ctrl.Result{}, nil
+		} else {
+			l.log.Info("namespace is being deleted", "namespace", namespace.Name, "failed", testContext.Failed, "prom labels", promLabels)
+		}		
 		if testContext.Failed {
 			l.testContextService.Fail(testContext)
 		} else {
