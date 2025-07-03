@@ -76,8 +76,7 @@ func (l *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	}
 
 	l.mutex.Lock()
-	defer l.mutex.Unlock()
-
+	defer l.mutex.Unlock()	
 	if pod.Status.Phase == corev1.PodFailed && strings.Contains(pod.Namespace, "ci-") {
 		l.testContext.UpdateWithPods(corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
