@@ -64,6 +64,7 @@ func (t *TestContextService) UpdateWithPods(namespace corev1.Namespace, pod core
 	testContext := t.getTestContext(namespace)
 	if pod.Status.Phase == corev1.PodFailed {
 		testContext.Failed = true
+		t.metricsContext.PodFailed(pod, testContext.Namespace.Labels["ci.openshift.io/metadata.target"], testContext.Namespace.Labels["ci.openshift.io/metadata.variant"])
 	}
 }
 
