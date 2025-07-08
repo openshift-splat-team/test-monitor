@@ -13,7 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-const testContextsFilename = "test_contexts.json"
+const testContextsFilename = "/context/test_contexts.json"
 
 type TestContextService struct {
 	testContexts   map[string]*data.TestContext
