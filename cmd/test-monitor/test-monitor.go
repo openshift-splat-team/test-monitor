@@ -3,15 +3,14 @@ package main
 import (
 	"os"
 
+	testcontext "github.com/openshift-splat-team/test-monitor/pkg/context"
+	"github.com/openshift-splat-team/test-monitor/pkg/controller"
+	v1 "github.com/openshift-splat-team/vsphere-capacity-manager/pkg/apis/vspherecapacitymanager.splat.io/v1"
 	"k8s.io/klog/v2/textlogger"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
-
-	testcontext "github.com/openshift-splat-team/test-monitor/pkg/context"
-	"github.com/openshift-splat-team/test-monitor/pkg/controller"
-	v1 "github.com/openshift-splat-team/vsphere-capacity-manager/pkg/apis/vspherecapacitymanager.splat.io/v1"
 )
 
 func main() {

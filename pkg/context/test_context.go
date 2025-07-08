@@ -1,7 +1,9 @@
 package context
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"path"
 	"sync"
 
@@ -23,9 +25,93 @@ type TestContextService struct {
 func (t *TestContextService) Initialize(log logr.Logger) {
 	t.testContexts = make(map[string]*data.TestContext)
 	t.mutex = &sync.Mutex{}
+	_ = t.Restore(testContextsFilename)
 	t.log = log
 	t.metricsContext = &MetricsContext{}
 	t.metricsContext.Initialize()
+}
+
+// SaveTestContexts saves all test contexts to a file
+func (t *TestContextService) Save(filename string) error {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+
+	// Create or overwrite the file
+	file, err := os.Create(filename)
+	if err != nil {
+		return fmt.Errorf("failed to create file %s: %w", filename, err)
+	}
+	defer file.Close()
+
+	// Encode the testContexts map to JSON
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(t.testContexts); err != nil {
+		return fmt.Errorf("failed to encode test contexts: %w", err)
+	}
+
+	t.log.Info("Successfully saved test contexts", "filename", filename, "count", len(t.testContexts))
+	return nil
+}
+
+// RestoreTestContexts restores test contexts from a file
+func (t *TestContextService) Restore(filename string) error {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+
+	// Check if file exists
+	if _, err := os.Stat(filename); os.IsNotExist(err) {
+		t.log.Info("Test contexts file does not exist, starting with empty contexts", "filename", filename)
+		return nil
+	}
+
+	// Open and read the file
+	file, err := os.Open(filename)
+	if err != nil {
+		return fmt.Errorf("failed to open file %s: %w", filename, err)
+	}
+	defer file.Close()
+
+	// Decode the JSON into testContexts map
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(&t.testContexts); err != nil {
+		return fmt.Errorf("failed to decode test contexts: %w", err)
+	}
+
+	// Ensure the map is not nil
+	if t.testContexts == nil {
+		t.testContexts = make(map[string]*data.TestContext)
+	}
+
+	t.log.Info("Successfully restored test contexts", "filename", filename, "count", len(t.testContexts))
+	return nil
+}
+
+
+// GetTestContextCount returns the number of active test contexts
+func (t *TestContextService) GetTestContextCount() int {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	return len(t.testContexts)
+}
+
+// GetTestContextSnapshot returns a copy of all test contexts for inspection
+func (t *TestContextService) GetTestContextSnapshot() map[string]*data.TestContext {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+
+	snapshot := make(map[string]*data.TestContext, len(t.testContexts))
+	for key, value := range t.testContexts {
+		// Create a copy of the test context
+		snapshot[key] = &data.TestContext{
+			Namespace:   value.Namespace,
+			Failed:      value.Failed,
+			Pool:        value.Pool,
+			NetworkType: value.NetworkType,
+			Portgroup:   value.Portgroup,
+		}
+	}
+	return snapshot
 }
 
 // getTestContext gets(or creates) the test context for a given namespace
@@ -108,6 +194,8 @@ func (t *TestContextService) GetPromLabelValues(testContext *data.TestContext) (
 		"ci.openshift.io/jobtype",
 	}
 
+	t.Save(testContextsFilename)	
+	
 	labels := testContext.Namespace.Labels
 
 	for _, labelName := range labelNames {
