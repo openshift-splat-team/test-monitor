@@ -23,10 +23,13 @@ type TestContextService struct {
 }
 
 func (t *TestContextService) Initialize(log logr.Logger) {
+	t.log = log
 	t.testContexts = make(map[string]*data.TestContext)
 	t.mutex = &sync.Mutex{}
-	_ = t.Restore(testContextsFilename)
-	t.log = log
+	err := t.Restore(testContextsFilename)
+	if err != nil {
+		log.Error(err, "error restoring test contexts")
+	}	
 	t.metricsContext = &MetricsContext{}
 	t.metricsContext.Initialize()
 }
@@ -58,6 +61,8 @@ func (t *TestContextService) Save(filename string) error {
 func (t *TestContextService) Restore(filename string) error {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
+
+	t.log.Info("Restoring test contexts", "filename", filename)
 
 	// Check if file exists
 	if _, err := os.Stat(filename); os.IsNotExist(err) {
